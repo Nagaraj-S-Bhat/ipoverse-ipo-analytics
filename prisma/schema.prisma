@@ -1,0 +1,228 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model AdminUser {
+  id           String    @id @default(cuid())
+  username     String    @unique
+  passwordHash String
+  role         Role      @default(ADMIN)
+  lastLogin    DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@map("admin_users")
+}
+
+model Setting {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  value       String
+  description String?
+  updatedAt   DateTime @updatedAt
+
+  @@map("settings")
+}
+
+model SyncLog {
+  id             String     @id @default(cuid())
+  sheetName      String
+  status         SyncStatus
+  recordsRead    Int        @default(0)
+  recordsCreated Int        @default(0)
+  recordsUpdated Int        @default(0)
+  recordsDeleted Int        @default(0)
+  durationMs     Int        @default(0)
+  errorMessage   String?
+  startedAt      DateTime
+  completedAt    DateTime
+
+  @@index([sheetName])
+  @@index([startedAt])
+  @@map("sync_logs")
+}
+
+model IPO {
+  id          String    @id @default(cuid())
+  companyName String
+  symbol      String?   @unique
+  slug        String    @unique
+  type        IPOType
+  status      IPOStatus @default(UPCOMING)
+
+  priceMin   Decimal? @db.Decimal(12, 2)
+  priceMax   Decimal? @db.Decimal(12, 2)
+  issuePrice Decimal? @db.Decimal(12, 2)
+
+  lotSize           Int?
+  issueSizeCr       Decimal? @db.Decimal(14, 2)
+  minimumInvestment Decimal? @db.Decimal(14, 2)
+
+  openDate      DateTime? @db.Date
+  closeDate     DateTime? @db.Date
+  allotmentDate DateTime? @db.Date
+  refundDate    DateTime? @db.Date
+  creditDate    DateTime? @db.Date
+  listingDate   DateTime? @db.Date
+
+  companyLogo        String?
+  companyBanner      String?
+  companyDescription String?
+  website            String?
+  sector             String?
+  industry           String?
+
+  exchange      Exchange?
+  leadManager   String?
+  registrarName String?
+  registrarUrl  String?
+  prospectusUrl String?
+  drhpUrl       String?
+  isin          String?
+  faceValue     Decimal?  @db.Decimal(12, 2)
+
+  employeeReservation    Decimal? @db.Decimal(12, 2)
+  shareholderReservation Decimal? @db.Decimal(12, 2)
+  marketMaker            String?
+
+  listingAt       String?
+  reviewSummary   String?
+  searchKeywords  String?
+  metaTitle       String?
+  metaDescription String?
+  canonicalUrl    String?
+
+  isDeleted          Boolean @default(false)
+  isLiveGmp          Boolean @default(false)
+  isCurrentMainboard Boolean @default(false)
+  isCurrentSme       Boolean @default(false)
+  isLiveSummary      Boolean @default(false)
+
+  // Cached GMP % from the current Live IPO GMP sheet (column D).
+  // Used for ordering /api/gmp/live by highest GMP % first.
+  currentGmpPercent Decimal? @db.Decimal(8, 2)
+
+  // Row position in the source Google Sheet (1-based).
+  // Preserved so performance pages can display rows in sheet order.
+  sheetRowOrder Int? @default(0)
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  ratingFireCount Int      @default(0)
+
+  gmpHistory          GMPHistory[]
+  listingPerformance  ListingPerformance?
+  subscriptionHistory SubscriptionHistory[]
+
+  @@index([companyName])
+  @@index([slug])
+  @@index([symbol])
+  @@index([type, status, isDeleted])
+  @@index([listingDate])
+  @@index([openDate])
+  @@index([closeDate])
+  @@map("ipos")
+}
+
+model ListingPerformance {
+  id    String @id @default(cuid())
+  ipoId String @unique
+
+  listingPrice       Decimal? @db.Decimal(12, 2)
+  listingGainPercent Decimal? @db.Decimal(8, 2)
+  currentPrice       Decimal? @db.Decimal(12, 2)
+  currentGainPercent Decimal? @db.Decimal(8, 2)
+  allTimeHigh        Decimal? @db.Decimal(12, 2)
+  allTimeLow         Decimal? @db.Decimal(12, 2)
+
+  lastUpdated DateTime
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  ipo IPO @relation(fields: [ipoId], references: [id], onDelete: Cascade)
+
+  @@index([lastUpdated])
+  @@map("listing_performances")
+}
+
+model GMPHistory {
+  id    String @id @default(cuid())
+  ipoId String
+
+  gmp                 Decimal  @db.Decimal(12, 2)
+  // kostak is intentionally NOT collected from Google Sheets.
+  // Stored as nullable so we never need to fabricate a zero value.
+  kostak              Decimal? @db.Decimal(12, 2)
+  subjectToSauda      Decimal? @db.Decimal(12, 2)
+  expectedListingGain Decimal? @db.Decimal(8, 2)
+
+  recordedAt DateTime @default(now())
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  ipo IPO @relation(fields: [ipoId], references: [id], onDelete: Cascade)
+
+  @@index([ipoId, recordedAt])
+  @@index([recordedAt])
+  @@map("gmp_histories")
+}
+
+model SubscriptionHistory {
+  id    String @id @default(cuid())
+  ipoId String
+
+  // Only `total` is reliably available from Live IPO Summary.
+  // Category subscriptions (retail/qib/nii) are stored as nullable
+  // so we never store fabricated zeros.
+  total       Decimal  @db.Decimal(12, 2)
+  retail      Decimal? @db.Decimal(12, 2)
+  qib         Decimal? @db.Decimal(12, 2)
+  nii         Decimal? @db.Decimal(12, 2)
+  employee    Decimal? @db.Decimal(12, 2)
+  shareholder Decimal? @db.Decimal(12, 2)
+  anchor      Decimal? @db.Decimal(12, 2)
+
+  recordedAt DateTime @default(now())
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  ipo IPO @relation(fields: [ipoId], references: [id], onDelete: Cascade)
+
+  @@index([ipoId, recordedAt])
+  @@index([recordedAt])
+  @@map("subscription_histories")
+}
+
+enum Role {
+  ADMIN
+}
+
+enum SyncStatus {
+  SUCCESS
+  FAILED
+  PARTIAL
+}
+
+enum IPOType {
+  MAINBOARD
+  SME
+}
+
+enum IPOStatus {
+  UPCOMING
+  OPEN
+  CLOSED
+  LISTED
+  WITHDRAWN
+  POSTPONED
+}
+
+enum Exchange {
+  NSE
+  BSE
+  NSE_BSE
+}
